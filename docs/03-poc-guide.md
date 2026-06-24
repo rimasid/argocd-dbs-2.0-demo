@@ -35,6 +35,8 @@ kubectl apply -f argocd/nginx-app.yaml
 3. Click on it — you'll see the deployment, service, and namespace as a live graph
 4. Status should move from `OutOfSync` → `Syncing` → `Synced`
 
+> This Application has **auto-sync enabled** (`automated.prune` and `automated.selfHeal` in `argocd/nginx-app.yaml`), so ArgoCD syncs on its own without a manual Sync click.
+
 ---
 
 ## Verify via kubectl
@@ -59,21 +61,26 @@ deployment.apps/nginx   1/1     1            1
 
 ## Demo: GitOps Drift Reconciliation
 
-This is the key concept to demonstrate live.
+This is the key concept to demonstrate live. Because `selfHeal: true` is enabled, ArgoCD automatically reverts any manual change back to the state defined in Git.
 
 **Manually delete the deployment (simulate drift):**
 ```bash
 kubectl delete deployment nginx -n nginx-demo
 ```
 
-Watch ArgoCD detect and fix it automatically within ~3 minutes (default reconcile interval), or click **Sync** in the UI for an immediate fix.
+ArgoCD detects the drift and recreates the deployment automatically — no manual Sync needed. Watch it reappear:
+```bash
+kubectl get deployment -n nginx-demo -w
+```
 
 **Scale the deployment manually (simulate config drift):**
 ```bash
 kubectl scale deployment nginx -n nginx-demo --replicas=3
 ```
 
-ArgoCD will bring it back to 1 replica (as defined in Git).
+ArgoCD brings it back to 1 replica (as defined in Git) automatically.
+
+> Self-heal reconciles within a few seconds to the default reconcile interval (~3 min). Click **Sync** in the UI if you want an immediate fix during the demo.
 
 ---
 
@@ -81,7 +88,7 @@ ArgoCD will bring it back to 1 replica (as defined in Git).
 
 1. Edit `apps/nginx/deployment.yaml` — change `replicas: 1` to `replicas: 2`
 2. Commit and push to GitHub
-3. ArgoCD detects the change and syncs automatically (or click Sync in UI)
+3. ArgoCD detects the change and syncs automatically
 4. Verify:
 ```bash
 kubectl get pods -n nginx-demo
@@ -89,24 +96,22 @@ kubectl get pods -n nginx-demo
 
 ---
 
-## Enable Auto-Sync (optional)
+## About the Sync Policy
 
-By default ArgoCD requires a manual sync. To enable auto-sync, edit `argocd/nginx-app.yaml` and add:
+This demo ships with auto-sync enabled in `argocd/nginx-app.yaml`:
 
 ```yaml
 spec:
   syncPolicy:
     automated:
-      prune: true
-      selfHeal: true
+      prune: true      # delete resources removed from Git
+      selfHeal: true   # revert manual cluster changes back to Git
 ```
 
-Then re-apply:
-```bash
-kubectl apply -f argocd/nginx-app.yaml
-```
+- **`selfHeal: true`** makes the drift demo above instant — manual changes are reverted automatically.
+- **`prune: true`** means if you remove a manifest from `apps/nginx/` in Git, ArgoCD deletes the matching resource from the cluster.
 
-With `selfHeal: true`, ArgoCD automatically reverts any manual changes to match Git — this makes the drift demo instant.
+To require a **manual** sync instead (click Sync in the UI), remove the `automated:` block and re-apply.
 
 ---
 
